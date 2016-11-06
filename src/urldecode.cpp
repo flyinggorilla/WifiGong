@@ -13,6 +13,8 @@
 
 */
 
+#include "urldecode.h"
+
 unsigned char h2int(char c)
 {
     if (c >= '0' && c <='9'){

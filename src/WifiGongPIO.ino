@@ -40,7 +40,7 @@ boolean debug = true;
 
 #define FIRMWARE_VERSION __DATE__ " " __TIME__
 
-#define DEFAULT_HOSTNAME "wifigong"
+#define DEFAULT_HOSTNAME "wifigong2"
 #define DEFAULT_APSSID "newgong"
 #define DEFAULT_SSID "gong"
 #define DEFAULT_PWD "gong"
@@ -50,22 +50,15 @@ boolean debug = true;
 #define PIN_AMP_SD 4
 
 ESP8266WebServer        httpServer ( 80 );
-boolean playgong = false;
+
+String playfile;
+boolean volatile playgong = false;
 
 boolean wifiStationOK = false;
 boolean wifiAPisConnected = false;
 boolean wifiConfigMode = true;
 boolean httpClientOnlyMode = false;
 long uploadSize = 0;
-
-
-// AUDIO STUFF
-uint16_t audioSample;
-unsigned int audioSampleRate;
-unsigned int bitsPerSample;
-File audioFile = File();
-
-
 
 
 //format bytes
@@ -201,14 +194,14 @@ void fileHandler() {
     }
   }
 
-  if (httpServer.hasArg(F("synth"))) {
+/*  if (httpServer.hasArg(F("synth"))) {
     if (httpServer.arg(F("synth")) == "8k")
       playGeneratorGong(8000);
     else if (httpServer.arg(F("synth")) == "16k")
       playGeneratorGong(16000);
     else if (httpServer.arg(F("synth")) == "44k")
       playGeneratorGong(44100);
-  }
+  }*/
 
 
   if (httpServer.hasArg(F("delete"))) {
@@ -240,7 +233,7 @@ void fileHandler() {
     response +=        "<p> disk size: " + formatBytes(info.totalBytes) + " disk free: " + formatBytes(info.totalBytes - info.usedBytes) + "</p>";
 
   }
-  if (httpServer.hasArg(F("show"))) {
+  /*if (httpServer.hasArg(F("show"))) {
     if (initAudioFile(httpServer.arg(F("show")))) {
       String dump = F("<br>***DUMP***<br>");
 
@@ -252,7 +245,7 @@ void fileHandler() {
       response+= dump;
     }
     audioFile.close();
-  }
+  }*/
 
   response +=            F("</body>"
                            "</html>");
@@ -525,7 +518,7 @@ void setupSerial() {
   }
 }
 
-int readWav();
+
 
 // initialization routines
 void setup ( void ) {
@@ -578,321 +571,14 @@ void setup ( void ) {
 
 }
 
-
-
-
-// WAV mono 8kHz = 125microseconds per sample
-// 8bit sample devided by 29 to convert to 9 possible PWM states 0.....8 HIGH for 8 pwm ticks
-#define PWMFREQUENCY 96000
-
-#include "pins_arduino.h"
-
-void t1IntHandler();
-
-
-bool initAudioFile(String fileName) {
-    // WAV format spec: http://soundfile.sapp.org/doc/WaveFormat/
-
-    audioFile = SPIFFS.open(fileName, "r");
-    if (!audioFile) {
-      Serial.println("Could not open : " + fileName);
-    }
-    size_t size = audioFile.size();
-    Serial.println("Opening file: " + fileName + " size: " + String(size));
-
-    uint32_t uint32buf = 0;
-    // read ChunkID "RIFF" header
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading header of file.");
-      return false;
-    }
-    if (uint32buf != 0x46464952) {
-      Serial.println("No RIFF format header ");
-      Serial.print("header: "); Serial.println(uint32buf, HEX);
-      return false;
-    }
-    // read Chunksize: remaining file size
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading size header.");
-      return false;
-    }
-    Serial.println("Chunksize from here: " + String(uint32buf));
-
-    // read Format header: "WAVE"
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error format header.");
-      return false;
-    }
-    if (uint32buf != 0x45564157 ) {
-      Serial.println("No WAVE format header");
-      return false;
-    }
-
-    // read Subchunk1ID: Format header: "fmt "
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error subchunk header.");
-      return false;
-    }
-    if (uint32buf != 0x20746d66  ) {
-      Serial.println("No 'fmt ' format header");
-      return false;
-    }
-
-    // read subChunk1size
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading subchunk1 size.");
-      return false;
-    }
-    Serial.println("subChunk1size: " + String(uint32buf));
-
-    uint16_t uint16buf;
-
-    // read AudioFormat
-    if (!audioFile.readBytes((char*)&uint16buf, sizeof(uint16buf))) {
-      Serial.println("Error reading audioformat.");
-      return false;
-    }
-    if (uint16buf != 1  ) {
-      Serial.println("Invalid audio format");
-      return false;
-    }
-
-    // read NumChannels
-    if (!audioFile.readBytes((char*)&uint16buf, sizeof(uint16buf))) {
-      Serial.println("Error reading NumChannels.");
-      return false;
-    }
-    if (uint16buf != 1  ) {
-      Serial.println("Too many channels. Only MONO files accepted. No Stereo.");
-      return false;
-    }
-
-
-    // read sample rate
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading sample rate");
-      return false;
-    }
-    audioSampleRate = uint32buf;
-    Serial.println("Sample rate: " + String(audioSampleRate));
-
-    // read byte rate
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading byte rate");
-      return false;
-    }
-    Serial.println("Byte rate: " + String(uint32buf));
-
-   // read BlockAlign
-    if (!audioFile.readBytes((char*)&uint16buf, sizeof(uint16buf))) {
-      Serial.println("Error reading block align.");
-      return false;
-    }
-    Serial.println("Block align: " + String(uint16buf));
-
-   // read BitsPerSample
-    if (!audioFile.readBytes((char*)&uint16buf, sizeof(uint16buf))) {
-      Serial.println("Error reading bits per sample.");
-      return false;
-    }
-    bitsPerSample = uint16buf;
-    Serial.println("Bits per sample: " + String(bitsPerSample) + " bits");
-
-    // read Subchunk2ID: Format header: "data"
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error data header.");
-      return false;
-    }
-    if (uint32buf != 0x61746164   ) {
-      Serial.println("No 'data' header");
-      return false;
-    }
-
-    // read subChunk1size
-    if (!audioFile.readBytes((char*)&uint32buf, sizeof(uint32buf))) {
-      Serial.println("Error reading subchunk2/data size.");
-      return false;
-    }
-    Serial.println("data size / subChunk2size: " + String(uint32buf));
-
-    return true;
-}
-
-bool getAudioFileSample() {
-    if (bitsPerSample == 8) {
-      uint8_t eightbitsample;
-      if (!audioFile.read(&eightbitsample, 1)) {
-        return false;
-      }
-      audioSample = eightbitsample;
-      //audioSample = audioSample << 6; // scale 8 bit audio to 16 bit
-      audioSample = (audioSample - 128)*128; // convert to signed and scale
-    } else {
-
-      if (!audioFile.read((uint8_t*)&audioSample, 2)) {
-        return false;
-      }
-      //audioSample = audioSample + 0x7FFF; // convert signed to unsigned
-      //audioSample = convertSinged2UnsignedSample(audioSample)/2;
-
-
-    }
-
-}
-
-
-
-/*
-ESP pin   - I2S signal
-----------------------
-GPIO2/TX1   - LRCK
-GPIO3/RX0   - DATA - note, on the Huzzah/ESP-12, this is the pin on the chip, not on the breakout as the breakout pin is blocked through a diode!!
-GPIO15      - BCLK
-
-I2S Amplifier MAX98357A
-LRCLK ONLY supports 8kHz, 16kHz, 32kHz, 44.1kHz, 48kHz, 88.2kHz and 96kHz frequencies.
-LRCLK clocks at 11.025kHz, 12kHz, 22.05kHz and 24kHz are NOT supported.
-Do not remove LRCLK while BCLK is present. Removing LRCLK while BCLK is present can cause unexpected output behavior including a large DC output voltage
-
-*/
-
-
-
-
-
-// taken from source: core_esp8266_i2s.c
-#define SLC_BUF_CNT (8) //Number of buffers in the I2S circular buffer
-#define SLC_BUF_LEN (64) //Length of one buffer, in 32-bit words.
-//--> 512 the buffer can hold 512 samples. we want it always at least 75% full, so we must more than 500 fills per second for 44khz
-
-void t1I2SIntHandler();
-
-unsigned int bufferFillsPerSecond;
-unsigned int statisticDMAfull;
-unsigned int statisticsSamples;
-
-void playI2SGong(String audioFileName) {
-    if (!initAudioFile(audioFileName))
-      return;
-    bufferFillsPerSecond = audioSampleRate * 32 / (SLC_BUF_CNT*SLC_BUF_LEN) ;
-    WiFi.enableSTA(false);
-    digitalWrite(PIN_I2SAMP, HIGH); // turn amp on
-    i2s_begin();
-    i2s_set_rate(audioSampleRate);
-    audioEnded = false;
-
-    timer1_disable();
-    timer1_isr_init();
-    timer1_attachInterrupt(t1I2SIntHandler);
-    timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-    timer1_write((clockCyclesPerMicrosecond() * 1000000) / bufferFillsPerSecond);
-}
-
-ICACHE_RAM_ATTR void t1I2SIntHandler() {
-  while (!i2s_is_full()) {
-    if (getAudioFileSample()) {
-      i2s_write_sample(audioSample); // BLOCKING if FULL!
-      statisticsSamples++;
-    } else {
-      audioEnded = true;
-      digitalWrite(PIN_I2SAMP, LOW); // turn amp off
-      i2s_end();
-      timer1_disable();
-      audioFile.close();
-      Serial.println("Statistics -- total samples: " + String(statisticsSamples) + " DMA full: " + String(statisticDMAfull));
-      WiFi.enableSTA(true);
-      return;
-    }
-  }
-  statisticDMAfull++;
-}
-
-void generatorIntHandler();
-
-void playGeneratorGong(uint32_t sampleRate) {
-    audioSampleRate = sampleRate;
-
-
-    bufferFillsPerSecond = audioSampleRate * 8 / (SLC_BUF_CNT*SLC_BUF_LEN) ;
-    audioTick = 0; // for generator only needed
-
-    digitalWrite(PIN_I2SAMP, HIGH); // turn amp on
-    i2s_begin();
-    i2s_set_rate(audioSampleRate);
-    audioEnded = false;
-
-    timer1_disable();
-    timer1_isr_init();
-    timer1_attachInterrupt(generatorIntHandler);
-    timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-    timer1_write((clockCyclesPerMicrosecond() * 1000000) / bufferFillsPerSecond);
-}
-
-boolean getGeneratorSample() {
-  float v = sin((float)(audioTick*440*2)*PI/audioSampleRate);
-  if (audioTick > audioSampleRate*5)
-    audioSample = v*0x7FFE + 0x7FFF;
-  else
-    audioSample = v*1024 + 1024;
-
-  audioSample = convertSinged2UnsignedSample(audioSample);
-
-  if (audioTick > audioSampleRate*10)
-    return false;
-
-  audioTick++;
-  return true;
-}
-ICACHE_RAM_ATTR void generatorIntHandler() {
-  while (!i2s_is_full()) {
-    if (getGeneratorSample()) {
-      i2s_write_sample(audioSample);
-      //i2s_write_lr(audioSample, audioSample);
-
-    } else {
-      audioEnded = true;
-      digitalWrite(PIN_I2SAMP, LOW); // turn amp off
-      i2s_end();
-      timer1_disable();
-      audioFile.close();
-      return;
-    }
-  }
-}
-
-void playDirect(String audioFileName) {
-  if (!initAudioFile(audioFileName))
-    return;
-
-  digitalWrite(PIN_I2SAMP, HIGH); // turn amp on
-  i2s_begin();
-  i2s_set_rate(audioSampleRate);
-
-  wdt_enable(1000*60);
-
-
-  while (true) {
-    if (getAudioFileSample()) {
-      wdt_disable();
-      i2s_write_sample(audioSample); // BLOCKING if FULL!
-    } else {
-      digitalWrite(PIN_I2SAMP, LOW); // turn amp off
-      i2s_end();
-      audioFile.close();
-      wdt_enable(1000*60);
-      return;
-    }
-  }
-
-}
-
+AudioPlayer audioPlayer(PIN_AMP_SD);
 
 void loop ( void ) {
   handleFactoryReset();
   httpServer.handleClient();
   if (playgong) {
     delay(100);
-    playDirect(playfile);
+    audioPlayer.playFile(playfile);
     playgong = false;
   }
 
