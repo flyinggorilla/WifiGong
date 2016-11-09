@@ -36,7 +36,8 @@ boolean debug = true;
 #include <i2s.h>
 #include <StreamString.h>
 #include "urldecode.h"
-#include "AudioPlayer.h"
+//#include "AudioPlayer.h"
+#include "AudioPlayerInterruptDriven.h"
 
 #define FIRMWARE_VERSION __DATE__ " " __TIME__
 
@@ -570,8 +571,8 @@ void setup ( void ) {
   httpServer.begin();
 
 }
-
-AudioPlayer audioPlayer(PIN_AMP_SD);
+ AudioPlayer audioPlayer(PIN_AMP_SD);
+//AudioPlayerInterruptDriven audioPlayer(PIN_AMP_SD);
 
 void loop ( void ) {
   handleFactoryReset();

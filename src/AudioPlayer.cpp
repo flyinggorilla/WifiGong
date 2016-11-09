@@ -180,22 +180,37 @@ bool AudioPlayer::playFile(String audioFileName) {
     return false;
   }
 
+  _playing = true;
   digitalWrite(_pinAmplifierSD, HIGH); // turn amp on
   i2s_begin();
   i2s_set_rate(_audioSampleRate);
 
   wdt_enable(1000*60);
 
-  while(nextSample()) {
-      wdt_disable();
-      i2s_write_sample(_audioSample); // BLOCKING if FULL!
-  }
+  playSamples();
 
   i2s_end();
   digitalWrite(_pinAmplifierSD, LOW); // turn amp off
   closeAudioFile();
+  _playing = false;
   wdt_enable(1000*60);
   return true;
+}
+
+void AudioPlayer::playSamples() {
+
+  while(nextSample()) {
+      wdt_disable();
+      /*while(i2s_is_full()) {
+        yield();
+      }
+      i2s_write_sample_nb(_audioSample); // BLOCKING if FULL!
+      */
+
+      // the following works fine without the while-loop!
+      i2s_write_sample(_audioSample); // BLOCKING if FULL!
+  }
+
 }
 
 

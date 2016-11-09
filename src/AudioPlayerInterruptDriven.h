@@ -3,7 +3,7 @@
 
 class AudioPlayerInterruptDriven : public AudioPlayer {
 public:
-    void playFile(String);
-protected:
-    ICACHE_RAM_ATTR void t1I2SIntHandler();
+    AudioPlayerInterruptDriven(int pinApmplifierSD) : AudioPlayer(pinApmplifierSD) {};
+
+    bool playFile(String);
 };
