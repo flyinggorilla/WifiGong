@@ -171,7 +171,6 @@ bool AudioPlayer::nextSample() {
 
 
 bool AudioPlayer::playFile(String audioFileName) {
-
   if (!openAudioFile(audioFileName))
     return false;
 

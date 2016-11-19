@@ -15,7 +15,7 @@
     GPIO15      - BCLK (yellow)
     GPIO4       - SD blue (set to GND for turning amp off)
 
-    I2S Amplifier MAX98357A
+    I2S Amplifier MAX98357A (NOTE: the Amp is not compatible with I2S left-shifted protocol which the ESP8266 is using. Thus we cannot use bit 15 from the data we put on the wire)
     LRCLK ONLY supports 8kHz, 16kHz, 32kHz, 44.1kHz, 48kHz, 88.2kHz and 96kHz frequencies.
     LRCLK clocks at 11.025kHz, 12kHz, 22.05kHz and 24kHz are NOT supported.
     Do not remove LRCLK while BCLK is present. Removing LRCLK while BCLK is present can cause unexpected output behavior including a large DC output voltage
@@ -41,6 +41,7 @@ boolean debug = true;
 
 #define FIRMWARE_VERSION __DATE__ " " __TIME__
 
+//#define DEFAULT_HOSTNAME "wifigong2"
 #define DEFAULT_HOSTNAME "wifigong2"
 #define DEFAULT_APSSID "newgong"
 #define DEFAULT_SSID "gong"
@@ -49,6 +50,10 @@ boolean debug = true;
 // ESP8266 Huzzah Pin usage
 #define PIN_FACTORYRESET 0 // use onboard GPIO0
 #define PIN_AMP_SD 4
+/*#define PIN_LED_R 12
+#define PIN_LED_G 13
+#define PIN_LED_B 14*/
+#define PIN_LED 14
 
 ESP8266WebServer        httpServer ( 80 );
 
@@ -234,6 +239,7 @@ void fileHandler() {
     response +=        "<p> disk size: " + formatBytes(info.totalBytes) + " disk free: " + formatBytes(info.totalBytes - info.usedBytes) + "</p>";
 
   }
+  response += "<p> last file played: " + playfile + "</p";
   /*if (httpServer.hasArg(F("show"))) {
     if (initAudioFile(httpServer.arg(F("show")))) {
       String dump = F("<br>***DUMP***<br>");
@@ -520,7 +526,6 @@ void setupSerial() {
 }
 
 
-
 // initialization routines
 void setup ( void ) {
   setupSerial();
@@ -528,7 +533,16 @@ void setup ( void ) {
   pinMode(PIN_FACTORYRESET, INPUT_PULLUP); //, INPUT_PULLUP); use INPUT_PULLUP in case we put reset to ground; currently reset is doing a 3V signal
   pinMode(PIN_AMP_SD, OUTPUT); // turn amp on/off; (particulariyl off - to ground - to save power and to avoid noise)
   //digitalWrite(PIN_AMP, LOW);
+  /*pinMode(PIN_LED_R, OUTPUT);
+  pinMode(PIN_LED_G, OUTPUT);
+  pinMode(PIN_LED_B, OUTPUT);
 
+  digitalWrite(PIN_LED_R, HIGH);
+  digitalWrite(PIN_LED_G, HIGH);
+  digitalWrite(PIN_LED_B, HIGH);*/
+
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, LOW);
   // initialize ESP8266 file system
   SPIFFS.begin();
   printSpiffsContents();
@@ -570,17 +584,94 @@ void setup ( void ) {
 
   httpServer.begin();
 
+
+
 }
+
+/*
+class AudioPlayerWithLEDlight : public AudioPlayer {
+public:
+    AudioPlayerWithLEDlight(int pinApmplifierSD) : AudioPlayer(pinApmplifierSD) { };
+    bool playFile(String);
+    bool nextSample();
+    unsigned long millisecs;
+    unsigned long lastmillis;
+    unsigned int slowtick;
+
+};
+
+bool AudioPlayerWithLEDlight::playFile(String filename) {
+   millisecs = lastmillis = millis();
+   slowtick = 0;
+   analogWrite(PIN_LED_R, HIGH);
+   bool ret = AudioPlayer::playFile(filename);
+   digitalWrite(PIN_LED_R, HIGH);
+   digitalWrite(PIN_LED_G, HIGH);
+   analogWrite(PIN_LED_B, 900);
+   return ret;
+}
+
+
+bool AudioPlayerWithLEDlight::nextSample() {
+  millisecs = millis();
+  slowtick ++;
+  if (slowtick < 1000) {
+      digitalWrite(PIN_LED_R, 0);
+      digitalWrite(PIN_LED_G, 0);
+      digitalWrite(PIN_LED_B, 0);
+  } else if (slowtick < 16000*5) {
+    digitalWrite(PIN_LED_R, 0);
+    digitalWrite(PIN_LED_G, 1);
+    digitalWrite(PIN_LED_B, 0);
+  } else {
+    digitalWrite(PIN_LED_R, 1);
+    digitalWrite(PIN_LED_G, 1);
+    digitalWrite(PIN_LED_B, 0);
+  }
+
+  if ((millisecs - lastmillis) > 1000) {
+    lastmillis = millisecs;
+    slowtick++;
+    unsigned int t = slowtick % 3;
+    Serial.println("slowtick: " + String(slowtick) + "slowtick module: " + String(t));
+
+    if (t = 0) {
+      digitalWrite(PIN_LED_R, 0); // max 1023 ---- but note that 1023 means LED OFF!!!
+    } else {
+      digitalWrite(PIN_LED_R, 255);
+    }
+
+    if (t = 1) {
+      digitalWrite(PIN_LED_G, 0); // max 1023 ---- but note that 1023 means LED OFF!!!
+    } else {
+      digitalWrite(PIN_LED_G, 255);
+    }
+
+    if (t = 3) {
+      digitalWrite(PIN_LED_B, 0); // max 1023 ---- but note that 1023 means LED OFF!!!
+    } else {
+      digitalWrite(PIN_LED_B, 255);
+    }
+
+  }
+  analogWrite(PIN_LED_R, 1023 - (millisecs % 900));
+
+  return AudioPlayer::nextSample();
+}*/
+
+
  AudioPlayer audioPlayer(PIN_AMP_SD);
 //AudioPlayerInterruptDriven audioPlayer(PIN_AMP_SD);
+ //AudioPlayer audioPlayer(PIN_AMP_SD);
 
 void loop ( void ) {
   handleFactoryReset();
   httpServer.handleClient();
   if (playgong) {
-    delay(100);
+    delay(100); // hack to allow Webserver to respond
+    digitalWrite(PIN_LED, HIGH);
     audioPlayer.playFile(playfile);
+    digitalWrite(PIN_LED, LOW);
     playgong = false;
   }
-
 }
