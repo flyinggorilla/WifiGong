@@ -32,6 +32,7 @@ boolean debug = true;
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <Wire.h>
+#include <EEPROM.h>
 #include <FS.h>
 #include <i2s.h>
 #include <StreamString.h>
@@ -41,11 +42,12 @@ boolean debug = true;
 
 #define FIRMWARE_VERSION __DATE__ " " __TIME__
 
-//#define DEFAULT_HOSTNAME "wifigong2"
-#define DEFAULT_HOSTNAME "wifigong2"
+#define DEFAULT_HOSTNAME "newgong"
 #define DEFAULT_APSSID "newgong"
 #define DEFAULT_SSID "gong"
 #define DEFAULT_PWD "gong"
+
+#define EEPROM_MAXSIZE 64
 
 // ESP8266 Huzzah Pin usage
 #define PIN_FACTORYRESET 0 // use onboard GPIO0
@@ -79,6 +81,64 @@ String formatBytes(size_t bytes) {
     return String(bytes / 1024.0 / 1024.0 / 1024.0) + "GB";
   }
 }
+
+
+
+
+void eepromSet(String content) {
+  EEPROM.begin(EEPROM_MAXSIZE); // note this allocates a buffer in RAM
+
+  // write string content
+  int len = content.length();
+  if (len >= EEPROM_MAXSIZE) {
+    len = EEPROM_MAXSIZE-1;
+  }
+  int addr = 0;
+  while (addr < len) {
+    EEPROM.write(addr, content.charAt(addr));
+    addr++;
+  }
+
+  // fill the remaining eeprom buffer with zeros
+  while (addr < EEPROM_MAXSIZE) {
+    EEPROM.write(addr, 0);
+    addr++;
+  }
+  EEPROM.end(); // commits EEPROM contents to flash if changed/written; releases allocated memory
+}
+
+
+String eepromRead() {
+  //EEPROM access to retreive the hostname
+  EEPROM.begin(EEPROM_MAXSIZE); // note this allocates a buffer in RAM
+  int address = 0;
+  //char eepromcontent[EEPROM_MAXSIZE];
+  String eepromcontent;
+  while (address < EEPROM_MAXSIZE) {
+    char val = EEPROM.read(address);
+    //eepromcontent[address] = val;
+    if (!val) {
+      break;
+    }
+    eepromcontent += val;
+    address++;
+  }
+  EEPROM.end(); // commits EEPROM contents to flash if changed/written; releases allocated memory
+
+  if (debug) {
+    Serial.println("EEPROM bytes: " + String(address) + " data: " + eepromcontent);
+  }
+
+  if (address >= EEPROM_MAXSIZE) { // no term zero found, so reset the EEPROM to the default
+    eepromcontent = DEFAULT_HOSTNAME;
+    eepromSet(eepromcontent);
+  }
+  return eepromcontent;
+}
+
+
+
+
 
 
 // Handle Factory reset and enable Access Point mode to enable configuration
@@ -277,6 +337,11 @@ void apiHandler() {
     playgong = true;
   }
 
+  if (httpServer.hasArg(F("hostname"))) {
+    String newWifiHostname = httpServer.arg(F("hostname"));
+    eepromSet(newWifiHostname);
+  }
+
   // note its required to provide both arguments SSID and PWD
   if (httpServer.hasArg("ssid") && httpServer.hasArg("pwd")) {
     String newWifiSSID = httpServer.arg("ssid");
@@ -296,10 +361,6 @@ void apiHandler() {
 
     httpReboot("New WIFI settings accepted. Mac address: " + WiFi.macAddress() + "<p/>");
 
-  }
-  if (httpServer.hasArg("hostname")) {
-    String newWifiHostname = httpServer.arg("hostname");
-    //TODO##################################################################
   }
 
   httpServer.sendHeader("cache-control", "private, max-age=0, no-cache, no-store");
@@ -543,13 +604,18 @@ void setup ( void ) {
 
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
+
+
+  // retrieves the hostname
+  String hostname = eepromRead();
+
   // initialize ESP8266 file system
   SPIFFS.begin();
   printSpiffsContents();
 
   // initialize Wifi based on stored config
   WiFi.onEvent(WiFiEvent);
-  WiFi.hostname(DEFAULT_HOSTNAME); // note, the hostname is not persisted in the ESP config like the SSID. so it needs to be set every time WiFi is started
+  WiFi.hostname(hostname); // note, the hostname is not persisted in the ESP config like the SSID. so it needs to be set every time WiFi is started
   wifiConfigMode = WiFi.getMode() & WIFI_AP;
 
   if (debug) {
